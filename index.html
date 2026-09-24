@@ -32,7 +32,7 @@ canvas{width:100%;height:230px;display:block}
 .date-info{font-size:13px;color:#666;min-width:125px}
 .values{font-size:18px;font-weight:bold;text-align:right}
 .pulse{color:#666;font-weight:normal;font-size:15px}
-.status-up{color:#d32f2f;margin-right:5px}
+.status-up{color:#d32f2f;margin-right:5px}.status-down{color:#1976d2;margin-right:5px}
 .status-normal{color:#388e3c;font-size:13px;font-weight:normal}
 .status-high{color:#d32f2f;font-size:13px;font-weight:normal}
 .status-low{color:#1976d2;font-size:13px;font-weight:normal}
@@ -147,7 +147,7 @@ function render(){
   if(!h.length){log.innerHTML='<div class="empty">Пока нет измерений</div>';drawChart([]);updateStats([]);return;}
   log.innerHTML=h.map(item=>{
     const [cls,label]=status(Number(item.sys),Number(item.dia));
-    const arrow=(item.sys>=140||item.dia>=90)?'<span class="status-up">↑</span>':'';
+    const arrow=(item.sys>=140||item.dia>=90)?'<span class="status-up">↑</span>':((item.sys<90||item.dia<60)?'<span class="status-down">↓</span>':'');
     const d=new Date(item.timestamp).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
     return `<div class="log-item">
       <div><div class="date-info">${d}</div>${item.context?`<div class="small">${escapeHtml(item.context)}</div>`:''}</div>
@@ -219,12 +219,24 @@ function restoreBackup(e){
 function exportCSV(){
   const h=getHistory();
   if(!h.length){alert('Нет данных для экспорта');return;}
-  let csv='Дата;СИС;ДИА;Пульс;Отметка;Статус\\n';
+
+  // UTF-16 LE + BOM. Excel на Android/Windows корректно распознаёт русский текст.
+  let csv='Дата\tСИС\tДИА\tПульс\tОтметка\tСтатус\r\n';
   h.forEach(x=>{
     const [_,s]=status(x.sys,x.dia);
-    csv+=`"${new Date(x.timestamp).toLocaleString('ru-RU')}";${x.sys};${x.dia};${x.pulse};"${x.context||''}";"${s}"\\n`;
+    const clean=v=>String(v ?? '').replace(/[\t\r\n]/g,' ');
+    const date=new Date(x.timestamp).toLocaleString('ru-RU');
+    csv+=`"${clean(date)}"\t${x.sys}\t${x.dia}\t${x.pulse}\t"${clean(x.context)}"\t"${clean(s)}"\r\n`;
   });
-  downloadBlob(new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'}),'dnevnik-davleniya.csv');
+
+  const bytes=new Uint8Array(2+csv.length*2);
+  bytes[0]=0xFF; bytes[1]=0xFE;
+  for(let i=0;i<csv.length;i++){
+    const code=csv.charCodeAt(i);
+    bytes[2+i*2]=code & 0xFF;
+    bytes[3+i*2]=(code>>8) & 0xFF;
+  }
+  downloadBlob(new Blob([bytes],{type:'text/csv;charset=utf-16le'}),'dnevnik-davleniya.csv');
 }
 function downloadBlob(blob,name){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
