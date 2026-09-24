@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#4caf50">
+<meta name="description" content="Дневник артериального давления и пульса">
+<link rel="manifest" href="manifest.json">
+<title>Дневник давления</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#f0f2f5;margin:0;padding:12px;color:#333}
+.container{max-width:650px;margin:auto;background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.12);overflow:hidden}
+header{background:#4caf50;color:#fff;padding:16px;text-align:center;font-size:21px;font-weight:bold}
+.form{padding:15px;border-bottom:1px solid #eee}
+.fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+input,select,button{font-size:16px;border-radius:8px}
+input,select{width:100%;padding:11px;border:1px solid #ccc;background:#fff}
+button{padding:11px 14px;border:0;cursor:pointer;font-weight:bold}
+.add{background:#4caf50;color:white;width:100%;margin-top:9px}
+.secondary{background:#eee;color:#333}
+.danger{background:#d32f2f;color:#fff}
+.blue{background:#1976d2;color:#fff}
+.toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;border-bottom:1px solid #eee}
+.stats{padding:12px;background:#fafafa;border-bottom:1px solid #eee}
+.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.card{background:#fff;border:1px solid #eee;border-radius:9px;padding:9px;text-align:center}
+.card b{display:block;font-size:18px;margin-top:4px}
+canvas{width:100%;height:230px;display:block}
+.chart-wrap{padding:10px;border-bottom:1px solid #eee}
+.log-item{padding:13px 15px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.date-info{font-size:13px;color:#666;min-width:125px}
+.values{font-size:18px;font-weight:bold;text-align:right}
+.pulse{color:#666;font-weight:normal;font-size:15px}
+.status-up{color:#d32f2f;margin-right:5px}
+.status-normal{color:#388e3c;font-size:13px;font-weight:normal}
+.status-high{color:#d32f2f;font-size:13px;font-weight:normal}
+.status-low{color:#1976d2;font-size:13px;font-weight:normal}
+.actions{display:flex;gap:5px;margin-top:6px;justify-content:flex-end}
+.actions button{padding:5px 8px;font-size:12px}
+.empty{text-align:center;color:#888;padding:25px}
+.note{font-size:12px;color:#777;padding:10px 15px}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10;align-items:center;justify-content:center;padding:15px}
+.modal-box{background:white;border-radius:12px;padding:18px;width:min(500px,100%)}
+.modal-box h3{margin-top:0}
+.small{font-size:12px;color:#777}
+@media(max-width:430px){.fields{grid-template-columns:1fr 1fr}.fields input:nth-child(3){grid-column:1/3}.stats-grid{grid-template-columns:1fr 1fr 1fr}.log-item{align-items:flex-start}.date-info{min-width:105px}.values{font-size:17px}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>Дневник давления</header>
+
+<div class="form">
+  <div class="fields">
+    <input type="number" id="sys" placeholder="СИС" min="50" max="300">
+    <input type="number" id="dia" placeholder="ДИА" min="30" max="200">
+    <input type="number" id="pulse" placeholder="Пульс" min="20" max="250">
+  </div>
+  <select id="context" style="margin-top:8px">
+    <option value="">Без отметки</option>
+    <option>Утро</option>
+    <option>Вечер</option>
+    <option>После отдыха</option>
+    <option>До лекарства</option>
+    <option>После лекарства</option>
+    <option>После нагрузки</option>
+  </select>
+  <button class="add" onclick="addEntry()">＋ Добавить измерение</button>
+</div>
+
+<div class="toolbar">
+  <button class="secondary" onclick="exportCSV()">📄 CSV / Excel</button>
+  <button class="secondary" onclick="backup()">💾 Резервная копия</button>
+  <button class="secondary" onclick="document.getElementById('restore').click()">📥 Восстановить</button>
+  <button class="danger" onclick="clearAll()">🗑 Очистить всё</button>
+  <input type="file" id="restore" accept=".json" hidden onchange="restoreBackup(event)">
+</div>
+
+<div class="stats">
+  <div class="stats-grid">
+    <div class="card">Записей<b id="count">0</b></div>
+    <div class="card">Среднее<b id="avg">—</b></div>
+    <div class="card">Пульс<b id="avgPulse">—</b></div>
+  </div>
+</div>
+
+<div class="chart-wrap">
+  <b>График последних измерений</b>
+  <canvas id="chart"></canvas>
+</div>
+
+<div id="log"></div>
+<div class="note">Стрелка ↑ показывается только при СИС ≥ 140 или ДИА ≥ 90. Цветной статус является ориентиром, а не диагнозом.</div>
+</div>
+
+<div class="modal" id="editModal">
+ <div class="modal-box">
+  <h3>Редактировать измерение</h3>
+  <input type="hidden" id="editId">
+  <input type="number" id="editSys" placeholder="СИС">
+  <input type="number" id="editDia" placeholder="ДИА" style="margin-top:8px">
+  <input type="number" id="editPulse" placeholder="Пульс" style="margin-top:8px">
+  <select id="editContext" style="margin-top:8px">
+   <option value="">Без отметки</option><option>Утро</option><option>Вечер</option>
+   <option>После отдыха</option><option>До лекарства</option><option>После лекарства</option>
+   <option>После нагрузки</option>
+  </select>
+  <div class="actions" style="margin-top:12px">
+   <button class="secondary" onclick="closeEdit()">Отмена</button>
+   <button class="blue" onclick="saveEdit()">Сохранить</button>
+  </div>
+ </div>
+</div>
+
+<script>
+const KEY='bp_history';
+const getHistory=()=>JSON.parse(localStorage.getItem(KEY)||'[]');
+const saveHistory=h=>localStorage.setItem(KEY,JSON.stringify(h));
+
+function status(sys,dia){
+  if(sys>=140||dia>=90)return ['high','Высокое'];
+  if(sys<90||dia<60)return ['low','Низкое'];
+  return ['normal','Нормальное'];
+}
+
+function addEntry(){
+  const sys=Number(document.getElementById('sys').value);
+  const dia=Number(document.getElementById('dia').value);
+  const pulse=document.getElementById('pulse').value;
+  if(!sys||!dia){alert('Введите СИС и ДИА');return;}
+  if(sys<50||sys>300||dia<30||dia>200){alert('Проверьте значения давления');return;}
+  const h=getHistory();
+  h.unshift({
+    id:Date.now(), timestamp:new Date().toISOString(),
+    sys,dia,pulse:pulse?Number(pulse):'',context:document.getElementById('context').value
+  });
+  saveHistory(h); clearInputs(); render();
+}
+function clearInputs(){
+  ['sys','dia','pulse'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('context').value='';
+}
+function render(){
+  const h=getHistory(), log=document.getElementById('log');
+  document.getElementById('count').textContent=h.length;
+  if(!h.length){log.innerHTML='<div class="empty">Пока нет измерений</div>';drawChart([]);updateStats([]);return;}
+  log.innerHTML=h.map(item=>{
+    const [cls,label]=status(Number(item.sys),Number(item.dia));
+    const arrow=(item.sys>=140||item.dia>=90)?'<span class="status-up">↑</span>':'';
+    const d=new Date(item.timestamp).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    return `<div class="log-item">
+      <div><div class="date-info">${d}</div>${item.context?`<div class="small">${escapeHtml(item.context)}</div>`:''}</div>
+      <div>
+       <div class="values">${arrow}${item.sys} / ${item.dia} ${item.pulse!==''?`<span class="pulse">(${item.pulse})</span>`:''}</div>
+       <div class="status-${cls}">${label}</div>
+       <div class="actions">
+        <button class="secondary" onclick="editEntry(${item.id})">Изменить</button>
+        <button class="danger" onclick="deleteEntry(${item.id})">Удалить</button>
+       </div>
+      </div>
+    </div>`;
+  }).join('');
+  updateStats(h); drawChart(h);
+}
+function updateStats(h){
+  if(!h.length){document.getElementById('avg').textContent='—';document.getElementById('avgPulse').textContent='—';return;}
+  const avgSys=Math.round(h.reduce((s,x)=>s+Number(x.sys),0)/h.length);
+  const avgDia=Math.round(h.reduce((s,x)=>s+Number(x.dia),0)/h.length);
+  const p=h.filter(x=>x.pulse!=='');
+  const avgP=p.length?Math.round(p.reduce((s,x)=>s+Number(x.pulse),0)/p.length):'—';
+  document.getElementById('avg').textContent=avgSys+'/'+avgDia;
+  document.getElementById('avgPulse').textContent=avgP;
+}
+function deleteEntry(id){
+  if(!confirm('Удалить это измерение?'))return;
+  saveHistory(getHistory().filter(x=>x.id!==id));render();
+}
+function editEntry(id){
+  const x=getHistory().find(x=>x.id===id); if(!x)return;
+  document.getElementById('editId').value=id;
+  document.getElementById('editSys').value=x.sys;
+  document.getElementById('editDia').value=x.dia;
+  document.getElementById('editPulse').value=x.pulse;
+  document.getElementById('editContext').value=x.context||'';
+  document.getElementById('editModal').style.display='flex';
+}
+function closeEdit(){document.getElementById('editModal').style.display='none'}
+function saveEdit(){
+  const id=Number(document.getElementById('editId').value);
+  const h=getHistory(), x=h.find(x=>x.id===id); if(!x)return;
+  x.sys=Number(document.getElementById('editSys').value);
+  x.dia=Number(document.getElementById('editDia').value);
+  x.pulse=document.getElementById('editPulse').value?Number(document.getElementById('editPulse').value):'';
+  x.context=document.getElementById('editContext').value;
+  saveHistory(h);closeEdit();render();
+}
+function clearAll(){
+  if(confirm('Удалить ВСЕ измерения? Это действие нельзя отменить.')){
+    localStorage.removeItem(KEY);render();
+  }
+}
+function backup(){
+  const blob=new Blob([JSON.stringify(getHistory(),null,2)],{type:'application/json'});
+  downloadBlob(blob,'dnevnik-davleniya-backup.json');
+}
+function restoreBackup(e){
+  const file=e.target.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const data=JSON.parse(r.result);
+      if(!Array.isArray(data))throw 0;
+      saveHistory(data);render();alert('Резервная копия восстановлена');
+    }catch{alert('Неверный файл резервной копии');}
+    e.target.value='';
+  };r.readAsText(file);
+}
+function exportCSV(){
+  const h=getHistory();
+  if(!h.length){alert('Нет данных для экспорта');return;}
+  let csv='Дата;СИС;ДИА;Пульс;Отметка;Статус\\n';
+  h.forEach(x=>{
+    const [_,s]=status(x.sys,x.dia);
+    csv+=`"${new Date(x.timestamp).toLocaleString('ru-RU')}";${x.sys};${x.dia};${x.pulse};"${x.context||''}";"${s}"\\n`;
+  });
+  downloadBlob(new Blob(['\\ufeff'+csv],{type:'text/csv;charset=utf-8'}),'dnevnik-davleniya.csv');
+}
+function downloadBlob(blob,name){
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
+
+function drawChart(h){
+  const c=document.getElementById('chart'),ctx=c.getContext('2d');
+  const dpr=devicePixelRatio||1, w=c.clientWidth, hh=230;
+  c.width=w*dpr;c.height=hh*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,hh);
+  if(!h.length)return;
+  const data=h.slice(0,20).reverse(), pad=30;
+  const max=Math.max(...data.map(x=>Number(x.sys)),160);
+  const min=Math.min(...data.map(x=>Number(x.dia)),50);
+  const range=Math.max(40,max-min), step=(w-pad*2)/Math.max(1,data.length-1);
+  const y=v=>hh-pad-(v-min)/range*(hh-pad*2);
+  ctx.strokeStyle='#ddd';ctx.lineWidth=1;
+  for(let i=0;i<5;i++){let v=min+range*i/4,yy=y(v);ctx.beginPath();ctx.moveTo(pad,yy);ctx.lineTo(w-pad,yy);ctx.stroke();ctx.fillStyle='#777';ctx.font='11px Arial';ctx.fillText(Math.round(v),3,yy+4);}
+  function line(key){
+    ctx.beginPath();
+    data.forEach((x,i)=>{let xx=pad+i*step,yy=y(Number(x[key]));i?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)});
+    ctx.strokeStyle=key==='sys'?'#d32f2f':'#1976d2';ctx.lineWidth=2;ctx.stroke();
+  }
+  line('sys');line('dia');
+  ctx.fillStyle='#d32f2f';ctx.fillRect(w-115,10,10,10);ctx.fillStyle='#333';ctx.fillText('СИС',w-100,19);
+  ctx.fillStyle='#1976d2';ctx.fillRect(w-65,10,10,10);ctx.fillStyle='#333';ctx.fillText('ДИА',w-50,19);
+}
+window.addEventListener('resize',()=>drawChart(getHistory()));
+if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+render();
+</script>
+</body>
+</html>
