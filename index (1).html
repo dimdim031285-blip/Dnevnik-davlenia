@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дневник давления</title>
+    <!-- Подключаем библиотеку SheetJS для корректного экспорта в Excel без иероглифов -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f6f9;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --border-color: #e0e0e0;
+            --primary-color: #007bff;
+            --primary-hover: #0056b3;
+            
+            /* Цвета статусов давления */
+            --status-green: #d4edda;
+            --status-yellow: #fff3cd;
+            --status-red: #f8d7da;
+            --text-green: #155724;
+            --text-yellow: #856404;
+            --text-red: #721c24;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+
+        h2 {
+            margin-top: 0;
+            text-align: center;
+            color: #222;
+        }
+
+        .form-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+            background: #fafafa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .form-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #555;
+        }
+
+        input, select {
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .btn-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-add { background-color: var(--primary-color); color: white; }
+        .btn-add:hover { background-color: var(--primary-hover); }
+        .btn-excel { background-color: #28a745; color: white; }
+        .btn-excel:hover { background-color: #218838; }
+        .btn-clear { background-color: #6c757d; color: white; margin-left: auto; }
+        .btn-clear:hover { background-color: #5a6268; }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        th, td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        /* Стили цветовой индикации строк */
+        .row-normal { background-color: var(--status-green) !important; color: var(--text-green); }
+        .row-elevated { background-color: var(--status-yellow) !important; color: var(--text-yellow); }
+        .row-high { background-color: var(--status-red) !important; color: var(--text-red); }
+
+        .empty-mock {
+            text-align: center;
+            color: #888;
+            padding: 30px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>📊 Дневник контроля давления</h2>
+
+    <!-- Форма добавления замера -->
+    <div class="form-group">
+        <div class="form-item">
+            <label>Дата и время</label>
+            <input type="datetime-local" id="datetime">
+        </div>
+        <div class="form-item">
+            <label>СИС (Верхнее)</label>
+            <input type="number" id="sys" placeholder="напр. 120" min="50" max="250">
+        </div>
+        <div class="form-item">
+            <label>ДИА (Нижнее)</label>
+            <input type="number" id="dia" placeholder="напр. 80" min="30" max="150">
+        </div>
+        <div class="form-item">
+            <label>Пульс</label>
+            <input type="number" id="pulse" placeholder="напр. 72" min="30" max="200">
+        </div>
+        <div class="form-item">
+            <label>Отметка времени</label>
+            <select id="tag">
+                <option value="Без отметки">Без отметки</option>
+                <option value="Утро">Утро</option>
+                <option value="Вечер">Вечер</option>
+                <option value="После отдыха">После отдыха</option>
+                <option value="До лекарства">До лекарства</option>
+                <option value="После лекарства">После лекарства</option>
+                <option value="После нагрузки">После нагрузки</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Кнопки управления -->
+    <div class="btn-container">
+        <button class="btn-add" onclick="addMeasurement()">＋ Добавить замер</button>
+        <button class="btn-excel" onclick="exportToExcel()">📊 Скачать Excel</button>
+        <button class="btn-clear" onclick="clearAll()">🗑 Очистить всё</button>
+    </div>
+
+    <!-- Таблица показаний (в столбец) -->
+    <div class="table-wrapper">
+        <table id="diaryTable">
+            <thead>
+                <tr>
+                    <th>Дата / Время</th>
+                    <th>СИС (Верхнее)</th>
+                    <th>ДИА (Нижнее)</th>
+                    <th>Пульс</th>
+                    <th>Отметка</th>
+                </tr>
+            </thead>
+            <tbody id="diaryBody">
+                <!-- Данные будут добавляться сюда -->
+            </tbody>
+        </table>
+        <div id="emptyMessage" class="empty-mock">Записей пока нет. Добавьте ваше первое измерение.</div>
+    </div>
+</div>
+
+<script>
+    // Инициализация данных из localStorage сайта
+    let diaryData = JSON.parse(localStorage.getItem('bloodPressureDiary')) || [];
+
+    // При загрузке страницы устанавливаем текущее время в форму и выводим таблицу
+    window.onload = function() {
+        setCurrentDateTime();
+        renderTable();
+    };
+
+    function setCurrentDateTime() {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        document.getElementById('datetime').value = now.toISOString().slice(0, 16);
+    }
+
+    // Определение статуса давления для цветовой разметки
+    function getPressureStatus(sys, dia) {
+        if (sys >= 140 || dia >= 90) {
+            return 'high';      // Высокое (Красный)
+        } else if ((sys >= 130 && sys <= 139) || (dia >= 85 && dia <= 89)) {
+            return 'elevated';  // Повышенное нормальное (Жёлтый)
+        } else {
+            return 'normal';    // Оптимальное / Нормальное (Зелёный)
+        }
+    }
+
+    // Добавление нового измерения в массив и localStorage
+    function addMeasurement() {
+        const datetimeInput = document.getElementById('datetime').value;
+        const sys = parseInt(document.getElementById('sys').value);
+        const dia = parseInt(document.getElementById('dia').value);
+        const pulse = parseInt(document.getElementById('pulse').value) || '—';
+        const tag = document.getElementById('tag').value;
+
+        if (!datetimeInput || !sys || !dia) {
+            alert('Пожалуйста, заполните дату, а также показатели СИС и ДИА.');
+            return;
+        }
+
+        // Форматируем дату для вывода пользователю
+        const dateObj = new Date(datetimeInput);
+        const formattedDate = dateObj.toLocaleString('ru-RU', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+
+        const record = {
+            id: Date.now(),
+            displayDate: formattedDate,
+            sys: sys,
+            dia: dia,
+            pulse: pulse,
+            tag: tag,
+            status: getPressureStatus(sys, dia)
+        };
+
+        // Добавляем запись в начало списка (чтобы новые замеры были сверху)
+        diaryData.unshift(record);
+        localStorage.setItem('bloodPressureDiary', JSON.stringify(diaryData));
+
+        // Очищаем форму и обновляем интерфейс
+        document.getElementById('sys').value = '';
+        document.getElementById('dia').value = '';
+        document.getElementById('pulse').value = '';
+        setCurrentDateTime();
+        renderTable();
+    }
+
+    // Отрисовка таблицы показаний в столбец с подсветкой строк
+    function renderTable() {
+        const tbody = document.getElementById('diaryBody');
+        const emptyMessage = document.getElementById('emptyMessage');
+        tbody.innerHTML = '';
+
+        if (diaryData.length === 0) {
+            emptyMessage.style.display = 'block';
+            return;
+        } else {
+            emptyMessage.style.display = 'none';
+        }
+
+        diaryData.forEach(item => {
+            const tr = document.createElement('tr');
+            
+            // Назначаем класс цвета в зависимости от статуса
+            if (item.status === 'high') tr.classList.add('row-high');
+            else if (item.status === 'elevated') tr.classList.add('row-elevated');
+            else if (item.status === 'normal') tr.classList.add('row-normal');
+
+            tr.innerHTML = `
+                <td>${item.displayDate}</td>
+                <td><b>${item.sys}</b></td>
+                <td><b>${item.dia}</b></td>
+                <td>${item.pulse}</td>
+                <td>${item.tag}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Полная очистка дневника
+    function clearAll() {
+        if (confirm('Вы уверены, что хотите удалить все записи в дневнике?')) {
+            diaryData = [];
+            localStorage.removeItem('bloodPressureDiary');
+            renderTable();
+        }
+    }
+
+    // Экспорт накопленных данных в Excel без иероглифов
+    function exportToExcel() {
+        if (diaryData.length === 0) {
+            alert('Нет данных для выгрузки. Сначала добавьте записи.');
+            return;
+        }
+
+        // Формируем чистую структуру строк и колонок для Excel-файла
+        const excelRows = [
+            ["Дата / Время", "Систолическое (Верхнее), мм рт.ст.", "Диастолическое (Нижнее), мм рт.ст.", "Пульс, уд/мин", "Отметка / Событие"]
+        ];
+
+        // Заполняем массив данными строго в столбец (от старых к новым для логики отчёта)
+        [...diaryData].reverse().forEach(item => {
+            excelRows.push([
+                item.displayDate,
+                item.sys,
+                item.dia,
+                item.pulse,
+                item.tag
+            ]);
+        });
+
+        // Создаем рабочую книгу Excel при помощи библиотеки SheetJS
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelRows);
+
+        // Настройка автоматической ширины столбцов в файле
+        ws['!cols'] = [
+            { wch: 20 }, // Дата
+            { wch: 38 }, // СИС
+            { wch: 38 }, // ДИА
+            { wch: 15 }, // Пульс
+            { wch: 20 }  // Отметка
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, "Дневник давления");
+
+        // Скачиваем готовый полноценный файл .xlsx, который откроется корректно на любом ПК
+        XLSX.writeFile(wb, "blood_pressure_diary.xlsx");
+    }
+</script>
+
+</body>
+</html>
