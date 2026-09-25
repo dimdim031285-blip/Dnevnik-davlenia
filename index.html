@@ -220,23 +220,54 @@ function exportCSV(){
   const h=getHistory();
   if(!h.length){alert('Нет данных для экспорта');return;}
 
-  // UTF-16 LE + BOM. Excel на Android/Windows корректно распознаёт русский текст.
-  let csv='Дата\tСИС\tДИА\tПульс\tОтметка\tСтатус\r\n';
-  h.forEach(x=>{
-    const [_,s]=status(x.sys,x.dia);
-    const clean=v=>String(v ?? '').replace(/[\t\r\n]/g,' ');
-    const date=new Date(x.timestamp).toLocaleString('ru-RU');
-    csv+=`"${clean(date)}"\t${x.sys}\t${x.dia}\t${x.pulse}\t"${clean(x.context)}"\t"${clean(s)}"\r\n`;
-  });
+  const esc = v => String(v ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-  const bytes=new Uint8Array(2+csv.length*2);
-  bytes[0]=0xFF; bytes[1]=0xFE;
-  for(let i=0;i<csv.length;i++){
-    const code=csv.charCodeAt(i);
-    bytes[2+i*2]=code & 0xFF;
-    bytes[3+i*2]=(code>>8) & 0xFF;
-  }
-  downloadBlob(new Blob([bytes],{type:'text/csv;charset=utf-16le'}),'dnevnik-davleniya.csv');
+  const rows = h.slice().reverse().map(x => {
+    const sys = Number(x.sys), dia = Number(x.dia);
+    let cls='normal', label='Нормальное', arrow='';
+    if(sys>=140 || dia>=90){ cls='high'; label='Высокое'; arrow='↑ '; }
+    else if(sys<90 || dia<60){ cls='low'; label='Низкое'; arrow='↓ '; }
+
+    const date = new Date(x.timestamp).toLocaleString('ru-RU');
+    return `<tr>
+      <td>${esc(date)}</td>
+      <td class="${cls}">${arrow}${sys} / ${dia}</td>
+      <td>${esc(x.pulse === '' ? '' : x.pulse)}</td>
+      <td class="${cls}">${label}</td>
+    </tr>`;
+  }).join('');
+
+  const excelHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style>
+body{font-family:Arial,sans-serif}
+table{border-collapse:collapse}
+th,td{border:1px solid #999;padding:7px 10px;text-align:center}
+th{background:#d9e1f2;font-weight:bold}
+.normal{background:#c6efce;color:#006100}
+.high{background:#ffc7ce;color:#9c0006;font-weight:bold}
+.low{background:#ffeb9c;color:#9c6500;font-weight:bold}
+</style>
+</head>
+<body>
+<table>
+<thead>
+<tr><th>Дата</th><th>Давление</th><th>Пульс</th><th>Статус</th></tr>
+</thead>
+<tbody>${rows}</tbody>
+</table>
+</body>
+</html>`;
+
+  const blob = new Blob(['\ufeff', excelHtml], {
+    type:'application/vnd.ms-excel;charset=utf-8'
+  });
+  downloadBlob(blob,'dnevnik-davleniya.xls');
 }
 function downloadBlob(blob,name){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();
