@@ -70,7 +70,7 @@ canvas{width:100%;height:230px;display:block}
 </div>
 
 <div class="toolbar">
-  <button class="secondary" onclick="exportCSV()">📄 CSV / Excel</button>
+  <button class="secondary" onclick="exportCSV()">📊 Excel</button>
   <button class="secondary" onclick="backup()">💾 Резервная копия</button>
   <button class="secondary" onclick="document.getElementById('restore').click()">📥 Восстановить</button>
   <button class="danger" onclick="clearAll()">🗑 Очистить всё</button>
@@ -91,7 +91,7 @@ canvas{width:100%;height:230px;display:block}
 </div>
 
 <div id="log"></div>
-<div class="note">↑ — высокое, ↓ — низкое давление. Цветной статус является ориентиром, а не диагнозом.</div>
+<div class="note">Стрелка ↑ показывается только при СИС ≥ 140 или ДИА ≥ 90. Цветной статус является ориентиром, а не диагнозом.</div>
 </div>
 
 <div class="modal" id="editModal">
@@ -220,59 +220,36 @@ function exportCSV(){
   const h=getHistory();
   if(!h.length){alert('Нет данных для экспорта');return;}
 
-  // Настоящий Excel-совместимый HTML-файл.
-  // Кириллица хранится внутри UTF-8 HTML с meta charset=UTF-8,
-  // поэтому Excel не должен превращать русский текст в иероглифы.
-  const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const esc=v=>String(v??'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
 
   let rows='';
   h.forEach(x=>{
     const [cls,label]=status(Number(x.sys),Number(x.dia));
     const arrow=cls==='high'?'↑ ':cls==='low'?'↓ ':'';
+    const bg=cls==='high'?'#f4cccc':cls==='low'?'#fff2cc':'#d9ead3';
     const date=new Date(x.timestamp).toLocaleString('ru-RU',{
       day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'
     });
-
-    const bg=cls==='high'?'#f4cccc':cls==='low'?'#fff2cc':'#d9ead3';
-
-    rows += `<tr>
-      <td>${esc(date)}</td>
-      <td class="pressure" style="background:${bg};font-weight:bold">${arrow}${esc(x.sys)} / ${esc(x.dia)}</td>
-      <td>${x.pulse===''?'':esc(x.pulse)}</td>
-      <td style="background:${bg};font-weight:bold">${esc(label)}</td>
-      <td>${esc(x.context||'')}</td>
-    </tr>`;
+    rows += `<tr>`+
+      `<td>${esc(date)}</td>`+
+      `<td style="background:${bg};font-weight:bold">${arrow}${esc(x.sys)} / ${esc(x.dia)}</td>`+
+      `<td>${x.pulse===''?'':esc(x.pulse)}</td>`+
+      `<td style="background:${bg};font-weight:bold">${esc(label)}</td>`+
+      `<td>${esc(x.context||'')}</td>`+
+      `</tr>`;
   });
 
-  const excelHtml = `<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-<style>
-body{font-family:Arial,sans-serif}
-table{border-collapse:collapse}
-th,td{border:1px solid #999;padding:7px 10px;text-align:center}
-th{background:#4caf50;color:white;font-weight:bold}
-.pressure{font-size:14pt}
-</style>
-</head>
-<body>
-<table>
-<thead><tr>
-<th>Дата</th>
-<th>Давление</th>
-<th>Пульс</th>
-<th>Статус</th>
-<th>Отметка</th>
-</tr></thead>
-<tbody>${rows}</tbody>
-</table>
-</body>
-</html>`;
+  const excelHtml='<!DOCTYPE html><html lang="ru"><head>'+ 
+    '<meta charset="UTF-8">'+
+    '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'+
+    '<style>body{font-family:Arial,sans-serif}table{border-collapse:collapse}th,td{border:1px solid #999;padding:8px 12px;text-align:center}th{background:#4caf50;color:#fff;font-weight:bold}</style>'+ 
+    '</head><body><table><thead><tr>'+ 
+    '<th>Дата</th><th>Давление</th><th>Пульс</th><th>Статус</th><th>Отметка</th>'+ 
+    '</tr></thead><tbody>'+rows+'</tbody></table></body></html>';
 
-  // UTF-8 BOM + HTML. Excel на Android открывает это как таблицу .xls.
-  const blob = new Blob(['\ufeff', excelHtml], {type:'application/vnd.ms-excel;charset=utf-8'});
+  const blob=new Blob(['\ufeff',excelHtml],{type:'application/vnd.ms-excel;charset=utf-8'});
   downloadBlob(blob,'dnevnik-davleniya.xls');
 }
 function downloadBlob(blob,name){
@@ -303,7 +280,7 @@ function drawChart(h){
   ctx.fillStyle='#1976d2';ctx.fillRect(w-65,10,10,10);ctx.fillStyle='#333';ctx.fillText('ДИА',w-50,19);
 }
 window.addEventListener('resize',()=>drawChart(getHistory()));
-if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js?v=3').catch(()=>{}));
+if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js?v=4').catch(()=>{}));
 render();
 </script>
 </body>
